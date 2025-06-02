@@ -42,6 +42,17 @@ export function TimeTracker() {
   const startTimer = useConvexMutation(api.timeTracking.startTimeEntry)
   const stopTimer = useConvexMutation(api.timeTracking.stopTimeEntry)
 
+  // Populate selections from running entry when timer is active
+  useEffect(() => {
+    if (runningEntry && (!selectedClientId || !selectedProjectId)) {
+      setSelectedClientId(runningEntry.clientId)
+      setSelectedProjectId(runningEntry.projectId)
+      if (runningEntry.description && !description) {
+        setDescription(runningEntry.description)
+      }
+    }
+  }, [runningEntry, selectedClientId, selectedProjectId, description])
+
   // Timer effect
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>
@@ -70,7 +81,7 @@ export function TimeTracker() {
     })
     
     queryClient.invalidateQueries()
-    setDescription('')
+    // Keep all selections including description for easy restart
   }
 
   const handleStopTimer = async () => {
@@ -78,6 +89,8 @@ export function TimeTracker() {
     
     await stopTimer({ id: runningEntry.id })
     queryClient.invalidateQueries()
+    // Keep client, project, and description selected for easy restart
+    // Note: selectedClientId, selectedProjectId, and description are all kept as they are
   }
 
   const activeClients = clients.filter(client => client.isActive)
@@ -167,7 +180,7 @@ export function TimeTracker() {
 
           <div className="flex gap-2">
             {runningEntry ? (
-              <Button onClick={handleStopTimer} variant="destructive" className="flex-1">
+              <Button onClick={handleStopTimer} variant="destructive" className="flex-1 h-12">
                 <Square className="w-4 h-4 mr-2" />
                 Stop Timer
               </Button>
@@ -175,7 +188,7 @@ export function TimeTracker() {
               <Button
                 onClick={handleStartTimer}
                 disabled={!selectedClientId || !selectedProjectId}
-                className="flex-1"
+                className="flex-1 h-12"
               >
                 <Play className="w-4 h-4 mr-2" />
                 Start Timer
