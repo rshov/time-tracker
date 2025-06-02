@@ -4,23 +4,32 @@ import { type Infer, v } from 'convex/values'
 const schema = defineSchema({
   clients: defineTable({
     id: v.string(),
+    userId: v.optional(v.string()), // Temporarily optional for migration
     name: v.string(),
     description: v.optional(v.string()),
     isActive: v.boolean(),
-  }).index('id', ['id']),
+  })
+    .index('id', ['id'])
+    .index('user', ['userId'])
+    .index('userActive', ['userId', 'isActive']),
 
   projects: defineTable({
     id: v.string(),
+    userId: v.optional(v.string()), // Temporarily optional for migration
     clientId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     isActive: v.boolean(),
   })
     .index('id', ['id'])
-    .index('client', ['clientId']),
+    .index('user', ['userId'])
+    .index('client', ['clientId'])
+    .index('userClient', ['userId', 'clientId'])
+    .index('userActive', ['userId', 'isActive']),
 
   timeEntries: defineTable({
     id: v.string(),
+    userId: v.optional(v.string()), // Temporarily optional for migration
     clientId: v.string(),
     projectId: v.string(),
     startTime: v.number(), // timestamp in milliseconds
@@ -30,12 +39,17 @@ const schema = defineSchema({
     date: v.string(), // YYYY-MM-DD format for easy querying by date
   })
     .index('id', ['id'])
+    .index('user', ['userId'])
     .index('client', ['clientId'])
     .index('project', ['projectId'])
     .index('date', ['date'])
     .index('running', ['endTime']) // to easily find running entries (where endTime is null)
-    .index('clientDate', ['clientId', 'date'])
-    .index('projectDate', ['projectId', 'date']),
+    .index('userRunning', ['userId', 'endTime']) // to find user's running entries
+    .index('userDate', ['userId', 'date'])
+    .index('userClient', ['userId', 'clientId'])
+    .index('userProject', ['userId', 'projectId'])
+    .index('userClientDate', ['userId', 'clientId', 'date'])
+    .index('userProjectDate', ['userId', 'projectId', 'date']),
 })
 
 export default schema

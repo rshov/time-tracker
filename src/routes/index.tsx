@@ -1,19 +1,24 @@
-import { useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
-import { api } from 'convex/_generated/api'
 import { Loader } from '~/components/Loader'
 import { TimeTracker } from '~/components/TimeTracker'
 import { TimeReports } from '~/components/TimeReports'
 import { ClientProjectManager } from '~/components/ClientProjectManager'
+import { AuthWrapper } from '~/components/AuthWrapper'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs'
+import { useUser, UserButton } from '@clerk/clerk-react'
 
 export const Route = createFileRoute('/')({
-  component: TimeTrackerApp,
+  component: () => (
+    <AuthWrapper>
+      <TimeTrackerApp />
+    </AuthWrapper>
+  ),
   pendingComponent: () => <Loader />,
 })
 
 function TimeTrackerApp() {
+  const { user } = useUser()
+
   return (
     <div className="min-h-screen bg-background">
       <div className="bg-card shadow-sm border-b">
@@ -24,6 +29,17 @@ function TimeTrackerApp() {
               <p className="text-muted-foreground mt-1">
                 Track your time across different clients and projects
               </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <UserButton 
+                appearance={{
+                  elements: {
+                    avatarBox: "w-8 h-8",
+                    userButtonPopoverCard: "border border-border shadow-lg",
+                    userButtonPopoverActionButton: "hover:bg-muted"
+                  }
+                }}
+              />
             </div>
           </div>
         </div>

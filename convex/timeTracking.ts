@@ -1,6 +1,7 @@
 import invariant from 'tiny-invariant'
 import { v } from 'convex/values'
 import {
+  type MutationCtx,
   type QueryCtx,
   mutation,
   query,
@@ -24,9 +25,22 @@ function withoutSystemFields<T extends { _creationTime: number; _id: Id<any> }>(
   return rest
 }
 
+// Get authenticated user ID from context
+async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<string> {
+  const identity = await ctx.auth.getUserIdentity()
+  console.log('Auth identity:', identity)
+  if (!identity) {
+    console.error('No identity found - user not authenticated')
+    throw new Error('User must be authenticated')
+  }
+  console.log('User authenticated with subject:', identity.subject)
+  return identity.subject
+}
+
 async function ensureClientExists(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   clientId: string,
+  userId: string,
 ): Promise<Doc<'clients'>> {
   const client = await ctx.db
     .query('clients')
@@ -34,12 +48,14 @@ async function ensureClientExists(
     .unique()
 
   invariant(client, `missing client ${clientId}`)
+  invariant(client.userId === userId, `client ${clientId} does not belong to user`)
   return client
 }
 
 async function ensureProjectExists(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   projectId: string,
+  userId: string,
 ): Promise<Doc<'projects'>> {
   const project = await ctx.db
     .query('projects')
@@ -47,12 +63,14 @@ async function ensureProjectExists(
     .unique()
 
   invariant(project, `missing project: ${projectId}`)
+  invariant(project.userId === userId, `project ${projectId} does not belong to user`)
   return project
 }
 
 async function ensureTimeEntryExists(
-  ctx: QueryCtx,
+  ctx: QueryCtx | MutationCtx,
   entryId: string,
+  userId: string,
 ): Promise<Doc<'timeEntries'>> {
   const entry = await ctx.db
     .query('timeEntries')
@@ -60,6 +78,7 @@ async function ensureTimeEntryExists(
     .unique()
 
   invariant(entry, `missing time entry: ${entryId}`)
+  invariant(entry.userId === userId, `time entry ${entryId} does not belong to user`)
   return entry
 }
 
@@ -77,16 +96,22 @@ function getStartOfWeek(date: Date): Date {
 // CLIENT QUERIES AND MUTATIONS
 
 export const getClients = query(async (ctx) => {
-  const clients = await ctx.db.query('clients').collect()
-  return clients.map(withoutSystemFields).filter(client => client.isActive)
+  const userId = await getAuthenticatedUserId(ctx)
+  const clients = await ctx.db
+    .query('clients')
+    .withIndex('userActive', (q) => q.eq('userId', userId).eq('isActive', true))
+    .collect()
+  return clients.map(withoutSystemFields)
 })
 
 export const createClient = mutation({
   args: createClientSchema,
   handler: async (ctx, { name, description }) => {
+    const userId = await getAuthenticatedUserId(ctx)
     const id = crypto.randomUUID()
     await ctx.db.insert('clients', {
       id,
+      userId,
       name,
       description,
       isActive: true,
@@ -98,7 +123,8 @@ export const createClient = mutation({
 export const updateClient = mutation({
   args: updateClientSchema,
   handler: async (ctx, clientUpdate) => {
-    const client = await ensureClientExists(ctx, clientUpdate.id)
+    const userId = await getAuthenticatedUserId(ctx)
+    const client = await ensureClientExists(ctx, clientUpdate.id, userId)
     await ctx.db.patch(client._id, clientUpdate)
   },
 })
@@ -108,26 +134,35 @@ export const updateClient = mutation({
 export const getProjects = query({
   args: { clientId: v.optional(v.string()) },
   handler: async (ctx, { clientId }) => {
+    const userId = await getAuthenticatedUserId(ctx)
     let projects
     if (clientId) {
+      // Ensure the client belongs to the user first
+      await ensureClientExists(ctx, clientId, userId)
       projects = await ctx.db
         .query('projects')
-        .withIndex('client', (q) => q.eq('clientId', clientId))
+        .withIndex('userClient', (q) => q.eq('userId', userId).eq('clientId', clientId))
+        .filter((q) => q.eq(q.field('isActive'), true))
         .collect()
     } else {
-      projects = await ctx.db.query('projects').collect()
+      projects = await ctx.db
+        .query('projects')
+        .withIndex('userActive', (q) => q.eq('userId', userId).eq('isActive', true))
+        .collect()
     }
-    return projects.map(withoutSystemFields).filter(project => project.isActive)
+    return projects.map(withoutSystemFields)
   },
 })
 
 export const createProject = mutation({
   args: createProjectSchema,
   handler: async (ctx, { clientId, name, description }) => {
-    await ensureClientExists(ctx, clientId)
+    const userId = await getAuthenticatedUserId(ctx)
+    await ensureClientExists(ctx, clientId, userId)
     const id = crypto.randomUUID()
     await ctx.db.insert('projects', {
       id,
+      userId,
       clientId,
       name,
       description,
@@ -140,9 +175,10 @@ export const createProject = mutation({
 export const updateProject = mutation({
   args: updateProjectSchema,
   handler: async (ctx, projectUpdate) => {
-    const project = await ensureProjectExists(ctx, projectUpdate.id)
+    const userId = await getAuthenticatedUserId(ctx)
+    const project = await ensureProjectExists(ctx, projectUpdate.id, userId)
     if (projectUpdate.clientId && projectUpdate.clientId !== project.clientId) {
-      await ensureClientExists(ctx, projectUpdate.clientId)
+      await ensureClientExists(ctx, projectUpdate.clientId, userId)
     }
     await ctx.db.patch(project._id, projectUpdate)
   },
@@ -151,16 +187,17 @@ export const updateProject = mutation({
 // TIME ENTRY QUERIES AND MUTATIONS
 
 export const getCurrentTimeEntry = query(async (ctx) => {
+  const userId = await getAuthenticatedUserId(ctx)
   const entry = await ctx.db
     .query('timeEntries')
-    .withIndex('running', (q) => q.eq('endTime', undefined))
+    .withIndex('userRunning', (q) => q.eq('userId', userId).eq('endTime', undefined))
     .unique()
   
   if (!entry) return null
   
   const [client, project] = await Promise.all([
-    ensureClientExists(ctx, entry.clientId),
-    ensureProjectExists(ctx, entry.projectId),
+    ensureClientExists(ctx, entry.clientId, userId),
+    ensureProjectExists(ctx, entry.projectId, userId),
   ])
   
   return {
@@ -173,14 +210,16 @@ export const getCurrentTimeEntry = query(async (ctx) => {
 export const startTimeEntry = mutation({
   args: startTimeEntrySchema,
   handler: async (ctx, { clientId, projectId, description }) => {
-    // Ensure client and project exist
-    await ensureClientExists(ctx, clientId)
-    await ensureProjectExists(ctx, projectId)
+    const userId = await getAuthenticatedUserId(ctx)
     
-    // Stop any currently running entry
+    // Ensure client and project exist and belong to user
+    await ensureClientExists(ctx, clientId, userId)
+    await ensureProjectExists(ctx, projectId, userId)
+    
+    // Stop any currently running entry for this user
     const currentEntry = await ctx.db
       .query('timeEntries')
-      .withIndex('running', (q) => q.eq('endTime', undefined))
+      .withIndex('userRunning', (q) => q.eq('userId', userId).eq('endTime', undefined))
       .unique()
     
     if (currentEntry) {
@@ -199,6 +238,7 @@ export const startTimeEntry = mutation({
     
     await ctx.db.insert('timeEntries', {
       id,
+      userId,
       clientId,
       projectId,
       startTime,
@@ -213,7 +253,8 @@ export const startTimeEntry = mutation({
 export const stopTimeEntry = mutation({
   args: stopTimeEntrySchema,
   handler: async (ctx, { id }) => {
-    const entry = await ensureTimeEntryExists(ctx, id)
+    const userId = await getAuthenticatedUserId(ctx)
+    const entry = await ensureTimeEntryExists(ctx, id, userId)
     invariant(!entry.endTime, 'Time entry is already stopped')
     
     const endTime = Date.now()
@@ -229,7 +270,8 @@ export const stopTimeEntry = mutation({
 export const updateTimeEntry = mutation({
   args: updateTimeEntrySchema,
   handler: async (ctx, entryUpdate) => {
-    const entry = await ensureTimeEntryExists(ctx, entryUpdate.id)
+    const userId = await getAuthenticatedUserId(ctx)
+    const entry = await ensureTimeEntryExists(ctx, entryUpdate.id, userId)
     await ctx.db.patch(entry._id, entryUpdate)
   },
 })
@@ -239,11 +281,12 @@ export const updateTimeEntry = mutation({
 export const getDailyTimeReport = query({
   args: { date: v.optional(v.string()) },
   handler: async (ctx, { date }) => {
+    const userId = await getAuthenticatedUserId(ctx)
     const targetDate = date || formatDate(new Date())
     
     const entries = await ctx.db
       .query('timeEntries')
-      .withIndex('date', (q) => q.eq('date', targetDate))
+      .withIndex('userDate', (q) => q.eq('userId', userId).eq('date', targetDate))
       .filter((q) => q.neq(q.field('endTime'), undefined))
       .collect()
     
@@ -255,8 +298,8 @@ export const getDailyTimeReport = query({
       totalTime += duration
       
       const [client, project] = await Promise.all([
-        ensureClientExists(ctx, entry.clientId),
-        ensureProjectExists(ctx, entry.projectId),
+        ensureClientExists(ctx, entry.clientId, userId),
+        ensureProjectExists(ctx, entry.projectId, userId),
       ])
       
       if (!clientTotals.has(entry.clientId)) {
@@ -295,6 +338,7 @@ export const getDailyTimeReport = query({
 export const getWeeklyTimeReport = query({
   args: { date: v.optional(v.string()) },
   handler: async (ctx, { date }) => {
+    const userId = await getAuthenticatedUserId(ctx)
     const targetDate = new Date(date || new Date())
     const startOfWeek = getStartOfWeek(targetDate)
     const endOfWeek = new Date(startOfWeek)
@@ -303,12 +347,16 @@ export const getWeeklyTimeReport = query({
     const startDate = formatDate(startOfWeek)
     const endDate = formatDate(endOfWeek)
     
-    // Get all entries for the week
-    const allEntries = await ctx.db.query('timeEntries').collect()
+    // Get all entries for the user for the week
+    const allEntries = await ctx.db
+      .query('timeEntries')
+      .withIndex('user', (q) => q.eq('userId', userId))
+      .filter((q) => q.neq(q.field('endTime'), undefined))
+      .collect()
+    
     const weekEntries = allEntries.filter(entry => 
       entry.date >= startDate && 
-      entry.date <= endDate && 
-      entry.endTime !== undefined
+      entry.date <= endDate
     )
     
     const clientTotals = new Map<string, { client: any; total: number }>()
@@ -318,7 +366,7 @@ export const getWeeklyTimeReport = query({
       const duration = entry.duration || 0
       totalTime += duration
       
-      const client = await ensureClientExists(ctx, entry.clientId)
+      const client = await ensureClientExists(ctx, entry.clientId, userId)
       
       if (!clientTotals.has(entry.clientId)) {
         clientTotals.set(entry.clientId, {
@@ -342,29 +390,41 @@ export const getWeeklyTimeReport = query({
 export const getCustomTimeReport = query({
   args: getTimeReportSchema,
   handler: async (ctx, { startDate, endDate, clientId, projectId }) => {
-    let entries = await ctx.db.query('timeEntries').collect()
+    const userId = await getAuthenticatedUserId(ctx)
+    
+    // Start with user's entries in date range
+    let entries = await ctx.db
+      .query('timeEntries')
+      .withIndex('user', (q) => q.eq('userId', userId))
+      .filter((q) => q.neq(q.field('endTime'), undefined))
+      .collect()
     
     // Filter by date range
     entries = entries.filter(entry => 
       entry.date >= startDate && 
-      entry.date <= endDate && 
-      entry.endTime !== undefined
+      entry.date <= endDate
     )
     
     // Filter by client if specified
     if (clientId) {
+      await ensureClientExists(ctx, clientId, userId)
       entries = entries.filter(entry => entry.clientId === clientId)
     }
     
     // Filter by project if specified
     if (projectId) {
+      await ensureProjectExists(ctx, projectId, userId)
       entries = entries.filter(entry => entry.projectId === projectId)
     }
     
     const clientTotals = new Map<string, { 
       client: any; 
       total: number; 
-      projects: Map<string, { project: any; total: number; entries: any[] }> 
+      projects: Map<string, { 
+        project: any; 
+        total: number; 
+        entries: Array<{ id: string; date: string; duration: number; description?: string }> 
+      }> 
     }>()
     let totalTime = 0
     
@@ -373,8 +433,8 @@ export const getCustomTimeReport = query({
       totalTime += duration
       
       const [client, project] = await Promise.all([
-        ensureClientExists(ctx, entry.clientId),
-        ensureProjectExists(ctx, entry.projectId),
+        ensureClientExists(ctx, entry.clientId, userId),
+        ensureProjectExists(ctx, entry.projectId, userId),
       ])
       
       if (!clientTotals.has(entry.clientId)) {
@@ -399,8 +459,10 @@ export const getCustomTimeReport = query({
       const projectData = clientData.projects.get(entry.projectId)!
       projectData.total += duration
       projectData.entries.push({
-        ...withoutSystemFields(entry),
-        durationFormatted: formatDuration(duration),
+        id: entry.id,
+        date: entry.date,
+        duration,
+        description: entry.description,
       })
     }
     
@@ -408,19 +470,15 @@ export const getCustomTimeReport = query({
       startDate,
       endDate,
       totalTime,
-      totalTimeFormatted: formatDuration(totalTime),
       clients: Array.from(clientTotals.entries()).map(([clientId, data]) => ({
         client: data.client,
         total: data.total,
-        totalFormatted: formatDuration(data.total),
-        projects: Array.from(data.projects.values()),
+        projects: Array.from(data.projects.entries()).map(([projectId, projectData]) => ({
+          project: projectData.project,
+          total: projectData.total,
+          entries: projectData.entries.sort((a, b) => b.date.localeCompare(a.date)), // Sort by date desc
+        })),
       })),
     }
   },
 })
-
-function formatDuration(milliseconds: number): string {
-  const hours = Math.floor(milliseconds / (1000 * 60 * 60))
-  const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60))
-  return `${hours}h ${minutes}m`
-}
