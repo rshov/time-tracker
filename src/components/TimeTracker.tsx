@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import type { Id } from 'convex/_generated/dataModel'
 
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.floor(milliseconds / 1000)
@@ -75,8 +76,8 @@ export function TimeTracker() {
     if (!selectedClientId || !selectedProjectId) return
     
     await startTimer({
-      clientId: selectedClientId,
-      projectId: selectedProjectId,
+      clientId: selectedClientId as Id<'clients'>,
+      projectId: selectedProjectId as Id<'projects'>,
       description: description || undefined,
     })
     
@@ -87,7 +88,7 @@ export function TimeTracker() {
   const handleStopTimer = async () => {
     if (!runningEntry) return
     
-    await stopTimer({ id: runningEntry.id })
+    await stopTimer({ _id: runningEntry._id })
     queryClient.invalidateQueries()
     // Keep client, project, and description selected for easy restart
     // Note: selectedClientId, selectedProjectId, and description are all kept as they are
@@ -139,7 +140,7 @@ export function TimeTracker() {
                 </SelectTrigger>
                 <SelectContent>
                   {activeClients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
+                    <SelectItem key={client._id} value={client._id}>
                       {client.name}
                     </SelectItem>
                   ))}
@@ -159,7 +160,7 @@ export function TimeTracker() {
                 </SelectTrigger>
                 <SelectContent>
                   {availableProjects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
+                    <SelectItem key={project._id} value={project._id}>
                       {project.name}
                     </SelectItem>
                   ))}

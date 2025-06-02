@@ -39,14 +39,10 @@ async function getAuthenticatedUserId(ctx: QueryCtx | MutationCtx): Promise<stri
 
 async function ensureClientExists(
   ctx: QueryCtx | MutationCtx,
-  clientId: string,
+  clientId: Id<'clients'>,
   userId: string,
 ): Promise<Doc<'clients'>> {
-  const client = await ctx.db
-    .query('clients')
-    .withIndex('id', (q) => q.eq('id', clientId))
-    .unique()
-
+  const client = await ctx.db.get(clientId)
   invariant(client, `missing client ${clientId}`)
   invariant(client.userId === userId, `client ${clientId} does not belong to user`)
   return client
@@ -54,14 +50,10 @@ async function ensureClientExists(
 
 async function ensureProjectExists(
   ctx: QueryCtx | MutationCtx,
-  projectId: string,
+  projectId: Id<'projects'>,
   userId: string,
 ): Promise<Doc<'projects'>> {
-  const project = await ctx.db
-    .query('projects')
-    .withIndex('id', (q) => q.eq('id', projectId))
-    .unique()
-
+  const project = await ctx.db.get(projectId)
   invariant(project, `missing project: ${projectId}`)
   invariant(project.userId === userId, `project ${projectId} does not belong to user`)
   return project
@@ -69,14 +61,10 @@ async function ensureProjectExists(
 
 async function ensureTimeEntryExists(
   ctx: QueryCtx | MutationCtx,
-  entryId: string,
+  entryId: Id<'timeEntries'>,
   userId: string,
 ): Promise<Doc<'timeEntries'>> {
-  const entry = await ctx.db
-    .query('timeEntries')
-    .withIndex('id', (q) => q.eq('id', entryId))
-    .unique()
-
+  const entry = await ctx.db.get(entryId)
   invariant(entry, `missing time entry: ${entryId}`)
   invariant(entry.userId === userId, `time entry ${entryId} does not belong to user`)
   return entry
@@ -99,24 +87,22 @@ export const getClients = query(async (ctx) => {
   const userId = await getAuthenticatedUserId(ctx)
   const clients = await ctx.db
     .query('clients')
-    .withIndex('userActive', (q) => q.eq('userId', userId).eq('isActive', true))
+    .withIndex('by_user_and_active', (q) => q.eq('userId', userId).eq('isActive', true))
     .collect()
-  return clients.map(withoutSystemFields)
+  return clients.map(client => ({ ...withoutSystemFields(client), _id: client._id }))
 })
 
 export const createClient = mutation({
   args: createClientSchema,
   handler: async (ctx, { name, description }) => {
     const userId = await getAuthenticatedUserId(ctx)
-    const id = crypto.randomUUID()
-    await ctx.db.insert('clients', {
-      id,
+    const _id = await ctx.db.insert('clients', {
       userId,
       name,
       description,
       isActive: true,
     })
-    return id
+    return _id
   },
 })
 
@@ -124,7 +110,7 @@ export const updateClient = mutation({
   args: updateClientSchema,
   handler: async (ctx, clientUpdate) => {
     const userId = await getAuthenticatedUserId(ctx)
-    const client = await ensureClientExists(ctx, clientUpdate.id, userId)
+    const client = await ensureClientExists(ctx, clientUpdate._id, userId)
     await ctx.db.patch(client._id, clientUpdate)
   },
 })
@@ -132,7 +118,7 @@ export const updateClient = mutation({
 // PROJECT QUERIES AND MUTATIONS
 
 export const getProjects = query({
-  args: { clientId: v.optional(v.string()) },
+  args: { clientId: v.optional(v.id('clients')) },
   handler: async (ctx, { clientId }) => {
     const userId = await getAuthenticatedUserId(ctx)
     let projects
@@ -141,16 +127,16 @@ export const getProjects = query({
       await ensureClientExists(ctx, clientId, userId)
       projects = await ctx.db
         .query('projects')
-        .withIndex('userClient', (q) => q.eq('userId', userId).eq('clientId', clientId))
+        .withIndex('by_user_and_client', (q) => q.eq('userId', userId).eq('clientId', clientId))
         .filter((q) => q.eq(q.field('isActive'), true))
         .collect()
     } else {
       projects = await ctx.db
         .query('projects')
-        .withIndex('userActive', (q) => q.eq('userId', userId).eq('isActive', true))
+        .withIndex('by_user_and_active', (q) => q.eq('userId', userId).eq('isActive', true))
         .collect()
     }
-    return projects.map(withoutSystemFields)
+    return projects.map(project => ({ ...withoutSystemFields(project), _id: project._id }))
   },
 })
 
@@ -159,16 +145,14 @@ export const createProject = mutation({
   handler: async (ctx, { clientId, name, description }) => {
     const userId = await getAuthenticatedUserId(ctx)
     await ensureClientExists(ctx, clientId, userId)
-    const id = crypto.randomUUID()
-    await ctx.db.insert('projects', {
-      id,
+    const _id = await ctx.db.insert('projects', {
       userId,
       clientId,
       name,
       description,
       isActive: true,
     })
-    return id
+    return _id
   },
 })
 
@@ -176,7 +160,7 @@ export const updateProject = mutation({
   args: updateProjectSchema,
   handler: async (ctx, projectUpdate) => {
     const userId = await getAuthenticatedUserId(ctx)
-    const project = await ensureProjectExists(ctx, projectUpdate.id, userId)
+    const project = await ensureProjectExists(ctx, projectUpdate._id, userId)
     if (projectUpdate.clientId && projectUpdate.clientId !== project.clientId) {
       await ensureClientExists(ctx, projectUpdate.clientId, userId)
     }
@@ -190,7 +174,7 @@ export const getCurrentTimeEntry = query(async (ctx) => {
   const userId = await getAuthenticatedUserId(ctx)
   const entry = await ctx.db
     .query('timeEntries')
-    .withIndex('userRunning', (q) => q.eq('userId', userId).eq('endTime', undefined))
+    .withIndex('by_user_and_running', (q) => q.eq('userId', userId).eq('endTime', undefined))
     .unique()
   
   if (!entry) return null
@@ -202,6 +186,7 @@ export const getCurrentTimeEntry = query(async (ctx) => {
   
   return {
     ...withoutSystemFields(entry),
+    _id: entry._id,
     client: withoutSystemFields(client),
     project: withoutSystemFields(project),
   }
@@ -219,7 +204,7 @@ export const startTimeEntry = mutation({
     // Stop any currently running entry for this user
     const currentEntry = await ctx.db
       .query('timeEntries')
-      .withIndex('userRunning', (q) => q.eq('userId', userId).eq('endTime', undefined))
+      .withIndex('by_user_and_running', (q) => q.eq('userId', userId).eq('endTime', undefined))
       .unique()
     
     if (currentEntry) {
@@ -232,12 +217,10 @@ export const startTimeEntry = mutation({
     }
     
     // Start new entry
-    const id = crypto.randomUUID()
     const startTime = Date.now()
     const date = formatDate(new Date(startTime))
     
-    await ctx.db.insert('timeEntries', {
-      id,
+    const _id = await ctx.db.insert('timeEntries', {
       userId,
       clientId,
       projectId,
@@ -246,15 +229,15 @@ export const startTimeEntry = mutation({
       date,
     })
     
-    return id
+    return _id
   },
 })
 
 export const stopTimeEntry = mutation({
   args: stopTimeEntrySchema,
-  handler: async (ctx, { id }) => {
+  handler: async (ctx, { _id }) => {
     const userId = await getAuthenticatedUserId(ctx)
-    const entry = await ensureTimeEntryExists(ctx, id, userId)
+    const entry = await ensureTimeEntryExists(ctx, _id, userId)
     invariant(!entry.endTime, 'Time entry is already stopped')
     
     const endTime = Date.now()
@@ -271,7 +254,7 @@ export const updateTimeEntry = mutation({
   args: updateTimeEntrySchema,
   handler: async (ctx, entryUpdate) => {
     const userId = await getAuthenticatedUserId(ctx)
-    const entry = await ensureTimeEntryExists(ctx, entryUpdate.id, userId)
+    const entry = await ensureTimeEntryExists(ctx, entryUpdate._id, userId)
     await ctx.db.patch(entry._id, entryUpdate)
   },
 })
@@ -286,11 +269,11 @@ export const getDailyTimeReport = query({
     
     const entries = await ctx.db
       .query('timeEntries')
-      .withIndex('userDate', (q) => q.eq('userId', userId).eq('date', targetDate))
+      .withIndex('by_user_and_date', (q) => q.eq('userId', userId).eq('date', targetDate))
       .filter((q) => q.neq(q.field('endTime'), undefined))
       .collect()
     
-    const clientTotals = new Map<string, { client: any; total: number; projects: Map<string, { project: any; total: number }> }>()
+    const clientTotals = new Map<Id<'clients'>, { client: any; total: number; projects: Map<Id<'projects'>, { project: any; total: number }> }>()
     let totalTime = 0
     
     for (const entry of entries) {
@@ -350,7 +333,7 @@ export const getWeeklyTimeReport = query({
     // Get all entries for the user for the week
     const allEntries = await ctx.db
       .query('timeEntries')
-      .withIndex('user', (q) => q.eq('userId', userId))
+      .withIndex('by_user', (q) => q.eq('userId', userId))
       .filter((q) => q.neq(q.field('endTime'), undefined))
       .collect()
     
@@ -359,7 +342,7 @@ export const getWeeklyTimeReport = query({
       entry.date <= endDate
     )
     
-    const clientTotals = new Map<string, { client: any; total: number }>()
+    const clientTotals = new Map<Id<'clients'>, { client: any; total: number }>()
     let totalTime = 0
     
     for (const entry of weekEntries) {
@@ -395,7 +378,7 @@ export const getCustomTimeReport = query({
     // Start with user's entries in date range
     let entries = await ctx.db
       .query('timeEntries')
-      .withIndex('user', (q) => q.eq('userId', userId))
+      .withIndex('by_user', (q) => q.eq('userId', userId))
       .filter((q) => q.neq(q.field('endTime'), undefined))
       .collect()
     
@@ -417,13 +400,13 @@ export const getCustomTimeReport = query({
       entries = entries.filter(entry => entry.projectId === projectId)
     }
     
-    const clientTotals = new Map<string, { 
+    const clientTotals = new Map<Id<'clients'>, { 
       client: any; 
       total: number; 
-      projects: Map<string, { 
+      projects: Map<Id<'projects'>, { 
         project: any; 
         total: number; 
-        entries: Array<{ id: string; date: string; duration: number; description?: string }> 
+        entries: Array<{ _id: Id<'timeEntries'>; date: string; duration: number; description?: string }> 
       }> 
     }>()
     let totalTime = 0
@@ -459,7 +442,7 @@ export const getCustomTimeReport = query({
       const projectData = clientData.projects.get(entry.projectId)!
       projectData.total += duration
       projectData.entries.push({
-        id: entry.id,
+        _id: entry._id,
         date: entry.date,
         duration,
         description: entry.description,
@@ -473,11 +456,7 @@ export const getCustomTimeReport = query({
       clients: Array.from(clientTotals.entries()).map(([clientId, data]) => ({
         client: data.client,
         total: data.total,
-        projects: Array.from(data.projects.entries()).map(([projectId, projectData]) => ({
-          project: projectData.project,
-          total: projectData.total,
-          entries: projectData.entries.sort((a, b) => b.date.localeCompare(a.date)), // Sort by date desc
-        })),
+        projects: Array.from(data.projects.values()),
       })),
     }
   },

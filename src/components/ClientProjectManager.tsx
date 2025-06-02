@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import type { Id } from 'convex/_generated/dataModel'
 
 export function ClientProjectManager() {
   const queryClient = useQueryClient()
@@ -52,7 +53,7 @@ export function ClientProjectManager() {
     if (!projectName.trim() || !selectedClientId) return
 
     await createProject({
-      clientId: selectedClientId,
+      clientId: selectedClientId as Id<'clients'>,
       name: projectName.trim(),
       description: projectDescription.trim() || undefined,
     })
@@ -66,7 +67,7 @@ export function ClientProjectManager() {
 
   const handleToggleClientStatus = async (clientId: string, isActive: boolean) => {
     await updateClient({
-      id: clientId,
+      _id: clientId as Id<'clients'>,
       isActive: !isActive,
     })
     queryClient.invalidateQueries()
@@ -74,8 +75,8 @@ export function ClientProjectManager() {
 
   const handleToggleProjectStatus = async (projectId: string, clientId: string, isActive: boolean) => {
     await updateProject({
-      id: projectId,
-      clientId: clientId,
+      _id: projectId as Id<'projects'>,
+      clientId: clientId as Id<'clients'>,
       isActive: !isActive,
     })
     queryClient.invalidateQueries()
@@ -147,7 +148,7 @@ export function ClientProjectManager() {
           <div className="space-y-2">
             {allClients.map((client) => (
               <div
-                key={client.id}
+                key={client._id}
                 className={`flex items-center justify-between p-3 border rounded-lg ${
                   client.isActive ? 'bg-background' : 'bg-muted/50'
                 }`}
@@ -169,7 +170,7 @@ export function ClientProjectManager() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleToggleClientStatus(client.id, client.isActive)}
+                    onClick={() => handleToggleClientStatus(client._id, client.isActive)}
                   >
                     {client.isActive ? 'Deactivate' : 'Activate'}
                   </Button>
@@ -218,7 +219,7 @@ export function ClientProjectManager() {
                     {allClients
                       .filter(client => client.isActive)
                       .map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
+                        <SelectItem key={client._id} value={client._id}>
                           {client.name}
                         </SelectItem>
                       ))}
@@ -276,11 +277,11 @@ export function ClientProjectManager() {
           {/* Existing Projects by Client */}
           <div className="space-y-4">
             {allClients.map((client) => {
-              const clientProjects = projects.filter(p => p.clientId === client.id)
+              const clientProjects = projects.filter(p => p.clientId === client._id)
               if (clientProjects.length === 0) return null
 
               return (
-                <div key={client.id} className="border rounded-lg p-4">
+                <div key={client._id} className="border rounded-lg p-4">
                   <h3 className="font-medium mb-3 flex items-center gap-2">
                     <Users className="h-4 w-4" />
                     {client.name}
@@ -288,7 +289,7 @@ export function ClientProjectManager() {
                   <div className="space-y-2">
                     {clientProjects.map((project) => (
                       <div
-                        key={project.id}
+                        key={project._id}
                         className={`flex items-center justify-between p-3 border rounded-lg ${
                           project.isActive ? 'bg-background' : 'bg-muted/50'
                         }`}
@@ -310,7 +311,7 @@ export function ClientProjectManager() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleToggleProjectStatus(project.id, client.id, project.isActive)}
+                            onClick={() => handleToggleProjectStatus(project._id, client._id, project.isActive)}
                           >
                             {project.isActive ? 'Deactivate' : 'Activate'}
                           </Button>

@@ -3,53 +3,47 @@ import { type Infer, v } from 'convex/values'
 
 const schema = defineSchema({
   clients: defineTable({
-    id: v.string(),
-    userId: v.optional(v.string()), // Temporarily optional for migration
+    userId: v.string(), // Required field for multi-user support
     name: v.string(),
     description: v.optional(v.string()),
     isActive: v.boolean(),
   })
-    .index('id', ['id'])
-    .index('user', ['userId'])
-    .index('userActive', ['userId', 'isActive']),
+    .index('by_user', ['userId'])
+    .index('by_user_and_active', ['userId', 'isActive']),
 
   projects: defineTable({
-    id: v.string(),
-    userId: v.optional(v.string()), // Temporarily optional for migration
-    clientId: v.string(),
+    userId: v.string(), // Required field for multi-user support
+    clientId: v.id('clients'), // Reference to client document
     name: v.string(),
     description: v.optional(v.string()),
     isActive: v.boolean(),
   })
-    .index('id', ['id'])
-    .index('user', ['userId'])
-    .index('client', ['clientId'])
-    .index('userClient', ['userId', 'clientId'])
-    .index('userActive', ['userId', 'isActive']),
+    .index('by_user', ['userId'])
+    .index('by_client', ['clientId'])
+    .index('by_user_and_client', ['userId', 'clientId'])
+    .index('by_user_and_active', ['userId', 'isActive']),
 
   timeEntries: defineTable({
-    id: v.string(),
-    userId: v.optional(v.string()), // Temporarily optional for migration
-    clientId: v.string(),
-    projectId: v.string(),
+    userId: v.string(), // Required field for multi-user support
+    clientId: v.id('clients'), // Reference to client document
+    projectId: v.id('projects'), // Reference to project document
     startTime: v.number(), // timestamp in milliseconds
     endTime: v.optional(v.number()), // timestamp in milliseconds, null if currently running
     duration: v.optional(v.number()), // duration in milliseconds, calculated when stopped
     description: v.optional(v.string()),
     date: v.string(), // YYYY-MM-DD format for easy querying by date
   })
-    .index('id', ['id'])
-    .index('user', ['userId'])
-    .index('client', ['clientId'])
-    .index('project', ['projectId'])
-    .index('date', ['date'])
-    .index('running', ['endTime']) // to easily find running entries (where endTime is null)
-    .index('userRunning', ['userId', 'endTime']) // to find user's running entries
-    .index('userDate', ['userId', 'date'])
-    .index('userClient', ['userId', 'clientId'])
-    .index('userProject', ['userId', 'projectId'])
-    .index('userClientDate', ['userId', 'clientId', 'date'])
-    .index('userProjectDate', ['userId', 'projectId', 'date']),
+    .index('by_user', ['userId'])
+    .index('by_client', ['clientId'])
+    .index('by_project', ['projectId'])
+    .index('by_date', ['date'])
+    .index('by_running', ['endTime']) // to easily find running entries (where endTime is null)
+    .index('by_user_and_running', ['userId', 'endTime']) // to find user's running entries
+    .index('by_user_and_date', ['userId', 'date'])
+    .index('by_user_and_client', ['userId', 'clientId'])
+    .index('by_user_and_project', ['userId', 'projectId'])
+    .index('by_user_client_and_date', ['userId', 'clientId', 'date'])
+    .index('by_user_project_and_date', ['userId', 'projectId', 'date']),
 })
 
 export default schema
@@ -64,7 +58,7 @@ export const createClientSchema = v.object({
 })
 
 export const updateClientSchema = v.object({
-  id: client.fields.id,
+  _id: v.id('clients'),
   name: v.optional(client.fields.name),
   description: v.optional(client.fields.description),
   isActive: v.optional(client.fields.isActive),
@@ -77,7 +71,7 @@ export const createProjectSchema = v.object({
 })
 
 export const updateProjectSchema = v.object({
-  id: project.fields.id,
+  _id: v.id('projects'),
   clientId: project.fields.clientId,
   name: v.optional(project.fields.name),
   description: v.optional(project.fields.description),
@@ -91,19 +85,19 @@ export const startTimeEntrySchema = v.object({
 })
 
 export const stopTimeEntrySchema = v.object({
-  id: timeEntry.fields.id,
+  _id: v.id('timeEntries'),
 })
 
 export const updateTimeEntrySchema = v.object({
-  id: timeEntry.fields.id,
+  _id: v.id('timeEntries'),
   description: v.optional(timeEntry.fields.description),
 })
 
 export const getTimeReportSchema = v.object({
   startDate: v.string(), // YYYY-MM-DD
   endDate: v.string(), // YYYY-MM-DD
-  clientId: v.optional(v.string()),
-  projectId: v.optional(v.string()),
+  clientId: v.optional(v.id('clients')),
+  projectId: v.optional(v.id('projects')),
 })
 
 export type Client = Infer<typeof client>

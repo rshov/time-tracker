@@ -13,7 +13,6 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
-import type * as migration from "../migration.js";
 import type * as timeTracking from "../timeTracking.js";
 
 /**
@@ -25,7 +24,6 @@ import type * as timeTracking from "../timeTracking.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  migration: typeof migration;
   timeTracking: typeof timeTracking;
 }>;
 export declare const api: FilterApi<

@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import { api } from 'convex/_generated/api'
 import { useState } from 'react'
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
+import type { Id } from 'convex/_generated/dataModel'
 
 function formatDuration(milliseconds: number): string {
   const hours = Math.floor(milliseconds / (1000 * 60 * 60))
@@ -32,11 +33,11 @@ export function TimeReports() {
   // Queries
   const { data: clients } = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
   const { data: projects } = useSuspenseQuery(convexQuery(api.timeTracking.getProjects, {}))
-  const { data: report } = useSuspenseQuery(convexQuery(api.timeTracking.getCustomTimeReport, {
+  const { data: report } = useQuery(convexQuery(api.timeTracking.getCustomTimeReport, {
     startDate,
     endDate,
-    clientId: selectedClientId === 'all' ? undefined : selectedClientId,
-    projectId: selectedProjectId === 'all' ? undefined : selectedProjectId,
+    clientId: selectedClientId === 'all' ? undefined : selectedClientId as Id<'clients'>,
+    projectId: selectedProjectId === 'all' ? undefined : selectedProjectId as Id<'projects'>,
   }))
 
   const setQuickDateRange = (days: number) => {
@@ -51,6 +52,10 @@ export function TimeReports() {
   const availableProjects = projects.filter(
     project => project.isActive && (selectedClientId === 'all' || project.clientId === selectedClientId)
   )
+
+  if (!report) {
+    return <div>Loading report...</div>
+  }
 
   return (
     <div className="space-y-6">
@@ -120,7 +125,7 @@ export function TimeReports() {
                   if (value !== 'all') {
                     // Clear project filter if it doesn't belong to the selected client
                     const projectBelongsToClient = projects.find(
-                      p => p.id === selectedProjectId && p.clientId === value
+                      p => p.clientId === value
                     )
                     if (!projectBelongsToClient) {
                       setSelectedProjectId('all')
@@ -134,7 +139,7 @@ export function TimeReports() {
                 <SelectContent>
                   <SelectItem value="all">All clients</SelectItem>
                   {activeClients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
+                    <SelectItem key={client._id} value={client._id}>
                       {client.name}
                     </SelectItem>
                   ))}
@@ -154,7 +159,7 @@ export function TimeReports() {
                 <SelectContent>
                   <SelectItem value="all">All projects</SelectItem>
                   {availableProjects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
+                    <SelectItem key={project._id} value={project._id}>
                       {project.name}
                     </SelectItem>
                   ))}
@@ -179,7 +184,7 @@ export function TimeReports() {
         <CardContent>
           <div className="space-y-6">
             {report.clients.map((clientData: any) => (
-              <div key={clientData.client.id} className="border rounded-lg p-6">
+              <div key={clientData.client.name} className="border rounded-lg p-6">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-semibold">{clientData.client.name}</h3>
                   <div className="text-right">
@@ -192,7 +197,7 @@ export function TimeReports() {
 
                 <div className="space-y-4">
                   {clientData.projects.map((projectData: any) => (
-                    <div key={projectData.project.id} className="border-l-2 border-muted pl-4">
+                    <div key={projectData.project.name} className="border-l-2 border-muted pl-4">
                       <div className="flex justify-between items-center mb-2">
                         <h4 className="font-medium">{projectData.project.name}</h4>
                         <span className="text-sm font-medium">{formatDuration(projectData.total)}</span>
@@ -201,7 +206,7 @@ export function TimeReports() {
                       {projectData.entries.length > 0 && (
                         <div className="space-y-1">
                           {projectData.entries.map((entry: any) => (
-                            <div key={entry.id} className="flex justify-between items-center text-sm text-muted-foreground">
+                            <div key={entry._id} className="flex justify-between items-center text-sm text-muted-foreground">
                               <div className="flex items-center gap-2">
                                 <Calendar className="h-3 w-3" />
                                 <span>{entry.date}</span>
