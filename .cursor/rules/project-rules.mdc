@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+The dev server for Tanstack Start and Convex is always running so you do not need to run it for changes to take effect.
