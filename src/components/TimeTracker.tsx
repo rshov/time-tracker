@@ -2,6 +2,12 @@ import { useSuspenseQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 import { api } from 'convex/_generated/api'
 import { useState, useEffect } from 'react'
+import { Play, Square, Clock } from 'lucide-react'
+import { Button } from './ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 function formatTime(milliseconds: number): string {
   const totalSeconds = Math.floor(milliseconds / 1000)
@@ -23,45 +29,28 @@ export function TimeTracker() {
   const [selectedClientId, setSelectedClientId] = useState<string>('')
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
   const [description, setDescription] = useState('')
-  const [currentTime, setCurrentTime] = useState(0)
+  const [currentTime, setCurrentTime] = useState<number>(0)
 
   // Queries
-  const clientsQuery = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
-  const projectsQuery = useSuspenseQuery(
-    convexQuery(api.timeTracking.getProjects, { clientId: selectedClientId || undefined })
-  )
-  const currentEntryQuery = useSuspenseQuery(convexQuery(api.timeTracking.getCurrentTimeEntry, {}))
-  const dailyReportQuery = useSuspenseQuery(convexQuery(api.timeTracking.getDailyTimeReport, {}))
-  const weeklyReportQuery = useSuspenseQuery(convexQuery(api.timeTracking.getWeeklyTimeReport, {}))
+  const { data: clients } = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
+  const { data: projects } = useSuspenseQuery(convexQuery(api.timeTracking.getProjects, {}))
+  const { data: runningEntry } = useSuspenseQuery(convexQuery(api.timeTracking.getCurrentTimeEntry, {}))
+  const { data: dailyReport } = useSuspenseQuery(convexQuery(api.timeTracking.getDailyTimeReport, { date: new Date().toISOString().split('T')[0] }))
+  const { data: weeklyReport } = useSuspenseQuery(convexQuery(api.timeTracking.getWeeklyTimeReport, {}))
 
   // Mutations
-  const startTimerMutation = useMutation({
-    mutationFn: useConvexMutation(api.timeTracking.startTimeEntry),
-    onSuccess: () => {
-      queryClient.invalidateQueries()
-    },
-  })
-
-  const stopTimerMutation = useMutation({
-    mutationFn: useConvexMutation(api.timeTracking.stopTimeEntry),
-    onSuccess: () => {
-      queryClient.invalidateQueries()
-      setCurrentTime(0)
-    },
-  })
+  const startTimer = useConvexMutation(api.timeTracking.startTimeEntry)
+  const stopTimer = useConvexMutation(api.timeTracking.stopTimeEntry)
 
   // Timer effect
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null
+    let interval: ReturnType<typeof setInterval>
     
-    if (currentEntryQuery.data) {
-      const startTime = currentEntryQuery.data.startTime
-      const updateTimer = () => {
-        setCurrentTime(Date.now() - startTime)
-      }
-      
-      updateTimer() // Initial update
-      interval = setInterval(updateTimer, 1000)
+    if (runningEntry) {
+      interval = setInterval(() => {
+        const elapsed = Date.now() - runningEntry.startTime
+        setCurrentTime(elapsed)
+      }, 1000)
     } else {
       setCurrentTime(0)
     }
@@ -69,194 +58,194 @@ export function TimeTracker() {
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [currentEntryQuery.data])
+  }, [runningEntry])
 
-  // Set initial selections when data loads
-  useEffect(() => {
-    if (currentEntryQuery.data) {
-      setSelectedClientId(currentEntryQuery.data.client.id)
-      setSelectedProjectId(currentEntryQuery.data.project.id)
-      setDescription(currentEntryQuery.data.description || '')
-    }
-  }, [currentEntryQuery.data])
-
-  // Update projects when client changes
-  useEffect(() => {
-    setSelectedProjectId('')
-  }, [selectedClientId])
-
-  const handleStart = () => {
+  const handleStartTimer = async () => {
     if (!selectedClientId || !selectedProjectId) return
     
-    startTimerMutation.mutate({
+    await startTimer({
       clientId: selectedClientId,
       projectId: selectedProjectId,
       description: description || undefined,
     })
-  }
-
-  const handleStop = () => {
-    if (!currentEntryQuery.data) return
     
-    stopTimerMutation.mutate({
-      id: currentEntryQuery.data.id,
-    })
+    queryClient.invalidateQueries()
+    setDescription('')
   }
 
-  const isRunning = Boolean(currentEntryQuery.data)
-  const canStart = !isRunning && selectedClientId && selectedProjectId
+  const handleStopTimer = async () => {
+    if (!runningEntry) return
+    
+    await stopTimer({ id: runningEntry.id })
+    queryClient.invalidateQueries()
+  }
+
+  const activeClients = clients.filter(client => client.isActive)
+  const availableProjects = projects.filter(
+    project => project.isActive && project.clientId === selectedClientId
+  )
 
   return (
-    <div className="space-y-8">
-      {/* Timer Section */}
-      <div className="bg-white rounded-lg shadow-md p-8">
-        <div className="text-center space-y-6">
-          <div className="text-6xl font-mono font-bold text-gray-800">
-            {formatTime(currentTime)}
-          </div>
-          
-          {isRunning && currentEntryQuery.data && (
-            <div className="text-lg text-gray-600">
-              <div className="font-medium">
-                {currentEntryQuery.data.client.name} • {currentEntryQuery.data.project.name}
+    <div className="space-y-6">
+      {/* Timer Control */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Time Tracker
+          </CardTitle>
+          <CardDescription>
+            Track your time across different clients and projects
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {runningEntry && (
+            <div className="text-center">
+              <div className="text-4xl font-mono font-bold text-primary mb-2">
+                {formatTime(currentTime)}
               </div>
-              {currentEntryQuery.data.description && (
-                <div className="text-sm text-gray-500 mt-1">
-                  {currentEntryQuery.data.description}
-                </div>
-              )}
+              <p className="text-sm text-muted-foreground">
+                Working on: {runningEntry.client.name} → {runningEntry.project.name}
+                {runningEntry.description && ` (${runningEntry.description})`}
+              </p>
             </div>
           )}
 
-          {!isRunning && (
-            <div className="space-y-4 max-w-md mx-auto">
-              <div>
-                <label htmlFor="client" className="block text-sm font-medium text-gray-700 mb-1">
-                  Client
-                </label>
-                <select
-                  id="client"
-                  value={selectedClientId}
-                  onChange={(e) => setSelectedClientId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select a client...</option>
-                  {clientsQuery.data.map((client) => (
-                    <option key={client.id} value={client.id}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="client">Client</Label>
+              <Select
+                value={selectedClientId}
+                onValueChange={(value) => {
+                  setSelectedClientId(value)
+                  setSelectedProjectId('')
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a client" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeClients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
                       {client.name}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="project" className="block text-sm font-medium text-gray-700 mb-1">
-                  Project
-                </label>
-                <select
-                  id="project"
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  disabled={!selectedClientId}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                >
-                  <option value="">Select a project...</option>
-                  {projectsQuery.data.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                  Description (optional)
-                </label>
-                <input
-                  id="description"
-                  type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="What are you working on?"
-                />
-              </div>
+                </SelectContent>
+              </Select>
             </div>
-          )}
 
-          <div>
-            {isRunning ? (
-              <button
-                onClick={handleStop}
-                disabled={stopTimerMutation.isPending}
-                className="px-8 py-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white font-semibold rounded-lg text-lg transition-colors"
+            <div className="space-y-2">
+              <Label htmlFor="project">Project</Label>
+              <Select
+                value={selectedProjectId}
+                onValueChange={setSelectedProjectId}
+                disabled={!selectedClientId}
               >
-                {stopTimerMutation.isPending ? 'Stopping...' : 'Stop'}
-              </button>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="description">Description (optional)</Label>
+            <Input
+              id="description"
+              placeholder="What are you working on?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2">
+            {runningEntry ? (
+              <Button onClick={handleStopTimer} variant="destructive" className="flex-1">
+                <Square className="w-4 h-4 mr-2" />
+                Stop Timer
+              </Button>
             ) : (
-              <button
-                onClick={handleStart}
-                disabled={!canStart || startTimerMutation.isPending}
-                className="px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold rounded-lg text-lg transition-colors"
+              <Button
+                onClick={handleStartTimer}
+                disabled={!selectedClientId || !selectedProjectId}
+                className="flex-1"
               >
-                {startTimerMutation.isPending ? 'Starting...' : 'Start'}
-              </button>
+                <Play className="w-4 h-4 mr-2" />
+                Start Timer
+              </Button>
             )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Daily Report */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Today's Time</h2>
-        <div className="space-y-4">
-          <div className="text-2xl font-bold text-blue-600">
-            Total: {formatDuration(dailyReportQuery.data.totalTime)}
+      {/* Daily Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Today's Summary</CardTitle>
+          <CardDescription>
+            Total time tracked today: {formatDuration(dailyReport.totalTime)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {dailyReport.clients.map((clientData: any) => (
+              <div key={clientData.client.id} className="border rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-medium">{clientData.client.name}</h4>
+                  <span className="text-sm font-medium">
+                    {formatDuration(clientData.total)}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {clientData.projects.map((projectData: any) => (
+                    <div key={projectData.project.id} className="flex justify-between text-sm text-muted-foreground">
+                      <span>• {projectData.project.name}</span>
+                      <span>{formatDuration(projectData.total)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {dailyReport.clients.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">
+                No time tracked today yet. Start your first timer!
+              </p>
+            )}
           </div>
-          
-          {dailyReportQuery.data.clients.map((clientData) => (
-            <div key={clientData.client.id} className="border-l-4 border-blue-200 pl-4">
-              <div className="font-medium text-gray-800">
-                {clientData.client.name} - {formatDuration(clientData.total)}
-              </div>
-              <div className="ml-4 space-y-1">
-                {clientData.projects.map((projectData) => (
-                  <div key={projectData.project.id} className="text-sm text-gray-600">
-                    {projectData.project.name}: {formatDuration(projectData.total)}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          
-          {dailyReportQuery.data.clients.length === 0 && (
-            <div className="text-gray-500 italic">No time tracked today</div>
-          )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
-      {/* Weekly Report */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">This Week's Time</h2>
-        <div className="space-y-4">
-          <div className="text-2xl font-bold text-green-600">
-            Total: {formatDuration(weeklyReportQuery.data.totalTime)}
-          </div>
-          
-          {weeklyReportQuery.data.clients.map((clientData) => (
-            <div key={clientData.client.id} className="border-l-4 border-green-200 pl-4">
-              <div className="font-medium text-gray-800">
-                {clientData.client.name} - {formatDuration(clientData.total)}
+      {/* Weekly Summary */}
+      <Card>
+        <CardHeader>
+          <CardTitle>This Week's Summary</CardTitle>
+          <CardDescription>
+            Total time tracked this week: {formatDuration(weeklyReport.totalTime)}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            {weeklyReport.clients.map((clientData: any) => (
+              <div key={clientData.client.id} className="flex justify-between items-center py-2 border-b last:border-b-0">
+                <span className="font-medium">{clientData.client.name}</span>
+                <span className="text-sm">{formatDuration(clientData.total)}</span>
               </div>
-            </div>
-          ))}
-          
-          {weeklyReportQuery.data.clients.length === 0 && (
-            <div className="text-gray-500 italic">No time tracked this week</div>
-          )}
-        </div>
-      </div>
+            ))}
+            {weeklyReport.clients.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">
+                No time tracked this week yet.
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 } 

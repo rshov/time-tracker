@@ -2,15 +2,21 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { convexQuery } from '@convex-dev/react-query'
 import { api } from 'convex/_generated/api'
 import { useState } from 'react'
-
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0]
-}
+import { Calendar, Clock, FileText } from 'lucide-react'
+import { Button } from './ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
 function formatDuration(milliseconds: number): string {
   const hours = Math.floor(milliseconds / (1000 * 60 * 60))
   const minutes = Math.floor((milliseconds % (1000 * 60 * 60)) / (1000 * 60))
   return `${hours}h ${minutes}m`
+}
+
+function formatDate(date: Date): string {
+  return date.toISOString().split('T')[0]
 }
 
 export function TimeReports() {
@@ -24,192 +30,208 @@ export function TimeReports() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('')
 
   // Queries
-  const clientsQuery = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
-  const projectsQuery = useSuspenseQuery(
-    convexQuery(api.timeTracking.getProjects, { clientId: selectedClientId || undefined })
-  )
-  const customReportQuery = useSuspenseQuery(
-    convexQuery(api.timeTracking.getCustomTimeReport, {
-      startDate,
-      endDate,
-      clientId: selectedClientId || undefined,
-      projectId: selectedProjectId || undefined,
-    })
-  )
+  const { data: clients } = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
+  const { data: projects } = useSuspenseQuery(convexQuery(api.timeTracking.getProjects, {}))
+  const { data: report } = useSuspenseQuery(convexQuery(api.timeTracking.getCustomTimeReport, {
+    startDate,
+    endDate,
+    clientId: selectedClientId || undefined,
+    projectId: selectedProjectId || undefined,
+  }))
 
-  const setQuickDateRange = (range: 'week' | 'month' | 'quarter') => {
+  const setQuickDateRange = (days: number) => {
     const end = new Date()
     const start = new Date()
-    
-    switch (range) {
-      case 'week':
-        start.setDate(end.getDate() - 7)
-        break
-      case 'month':
-        start.setDate(end.getDate() - 30)
-        break
-      case 'quarter':
-        start.setDate(end.getDate() - 90)
-        break
-    }
-    
+    start.setDate(start.getDate() - days)
     setStartDate(formatDate(start))
     setEndDate(formatDate(end))
   }
 
+  const activeClients = clients.filter(client => client.isActive)
+  const availableProjects = projects.filter(
+    project => project.isActive && (!selectedClientId || project.clientId === selectedClientId)
+  )
+
   return (
-    <div className="space-y-8">
-      {/* Report Filters */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-6">Time Reports</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <div>
-            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Start Date
-            </label>
-            <input
-              id="startDate"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
-              End Date
-            </label>
-            <input
-              id="endDate"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          
-          <div>
-            <label htmlFor="filterClient" className="block text-sm font-medium text-gray-700 mb-1">
-              Client (optional)
-            </label>
-            <select
-              id="filterClient"
-              value={selectedClientId}
-              onChange={(e) => {
-                setSelectedClientId(e.target.value)
-                setSelectedProjectId('') // Reset project when client changes
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All clients</option>
-              {clientsQuery.data.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label htmlFor="filterProject" className="block text-sm font-medium text-gray-700 mb-1">
-              Project (optional)
-            </label>
-            <select
-              id="filterProject"
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              disabled={!selectedClientId}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-            >
-              <option value="">All projects</option>
-              {projectsQuery.data.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="flex flex-col justify-end">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setQuickDateRange('week')}
-                className="px-3 py-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-              >
-                7d
-              </button>
-              <button
-                onClick={() => setQuickDateRange('month')}
-                className="px-3 py-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-              >
-                30d
-              </button>
-              <button
-                onClick={() => setQuickDateRange('quarter')}
-                className="px-3 py-2 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded transition-colors"
-              >
-                90d
-              </button>
+    <div className="space-y-6">
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Time Reports
+          </CardTitle>
+          <CardDescription>
+            Generate detailed reports for any date range and filter by client or project
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Date Range */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="startDate">Start Date</Label>
+              <Input
+                id="startDate"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="endDate">End Date</Label>
+              <Input
+                id="endDate"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </div>
           </div>
-        </div>
-      </div>
+
+          {/* Quick Date Range Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setQuickDateRange(7)}>
+              Last 7 days
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setQuickDateRange(30)}>
+              Last 30 days
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setQuickDateRange(90)}>
+              Last 90 days
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              const today = new Date()
+              const startOfYear = new Date(today.getFullYear(), 0, 1)
+              setStartDate(formatDate(startOfYear))
+              setEndDate(formatDate(today))
+            }}>
+              This year
+            </Button>
+          </div>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="clientFilter">Filter by Client</Label>
+              <Select
+                value={selectedClientId}
+                onValueChange={(value) => {
+                  setSelectedClientId(value)
+                  if (value) {
+                    // Clear project filter if it doesn't belong to the selected client
+                    const projectBelongsToClient = projects.find(
+                      p => p.id === selectedProjectId && p.clientId === value
+                    )
+                    if (!projectBelongsToClient) {
+                      setSelectedProjectId('')
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All clients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All clients</SelectItem>
+                  {activeClients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="projectFilter">Filter by Project</Label>
+              <Select
+                value={selectedProjectId}
+                onValueChange={setSelectedProjectId}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All projects</SelectItem>
+                  {availableProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Report Results */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-lg font-semibold text-gray-800">
-            Report Results ({startDate} to {endDate})
-          </h3>
-          <div className="text-2xl font-bold text-purple-600">
-            {customReportQuery.data.totalTimeFormatted}
-          </div>
-        </div>
-
-        {customReportQuery.data.clients.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            No time entries found for the selected criteria.
-          </div>
-        ) : (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Clock className="h-5 w-5" />
+            Report Results
+          </CardTitle>
+          <CardDescription>
+            Total time: {formatDuration(report.totalTime)} ({startDate} to {endDate})
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
           <div className="space-y-6">
-            {customReportQuery.data.clients.map((clientData) => (
-              <div key={clientData.client.id} className="border border-gray-200 rounded-lg p-4">
+            {report.clients.map((clientData: any) => (
+              <div key={clientData.client.id} className="border rounded-lg p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h4 className="text-lg font-medium text-gray-800">{clientData.client.name}</h4>
-                  <div className="font-semibold text-blue-600">{clientData.totalFormatted}</div>
+                  <h3 className="text-lg font-semibold">{clientData.client.name}</h3>
+                  <div className="text-right">
+                    <div className="text-lg font-medium">{formatDuration(clientData.total)}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {((clientData.total / report.totalTime) * 100).toFixed(1)}% of total
+                    </div>
+                  </div>
                 </div>
-                
+
                 <div className="space-y-4">
-                  {clientData.projects.map((projectData) => (
-                    <div key={projectData.project.id} className="ml-4 border-l-2 border-gray-200 pl-4">
+                  {clientData.projects.map((projectData: any) => (
+                    <div key={projectData.project.id} className="border-l-2 border-muted pl-4">
                       <div className="flex justify-between items-center mb-2">
-                        <h5 className="font-medium text-gray-700">{projectData.project.name}</h5>
-                        <div className="font-medium text-green-600">{formatDuration(projectData.total)}</div>
+                        <h4 className="font-medium">{projectData.project.name}</h4>
+                        <span className="text-sm font-medium">{formatDuration(projectData.total)}</span>
                       </div>
-                      
-                      <div className="space-y-2">
-                        {projectData.entries.map((entry, index) => (
-                          <div key={entry.id || index} className="flex justify-between items-center text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded">
-                            <div className="flex items-center space-x-4">
-                              <span>{entry.date}</span>
-                              {entry.description && (
-                                <span className="italic">"{entry.description}"</span>
-                              )}
+
+                      {projectData.entries.length > 0 && (
+                        <div className="space-y-1">
+                          {projectData.entries.map((entry: any) => (
+                            <div key={entry.id} className="flex justify-between items-center text-sm text-muted-foreground">
+                              <div className="flex items-center gap-2">
+                                <Calendar className="h-3 w-3" />
+                                <span>{entry.date}</span>
+                                {entry.description && (
+                                  <span className="italic">• {entry.description}</span>
+                                )}
+                              </div>
+                              <span>{formatDuration(entry.duration)}</span>
                             </div>
-                            <span className="font-mono">{entry.durationFormatted}</span>
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             ))}
+
+            {report.clients.length === 0 && (
+              <div className="text-center py-12">
+                <Clock className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium text-muted-foreground mb-2">No time entries found</h3>
+                <p className="text-sm text-muted-foreground">
+                  Try adjusting your date range or removing filters to see more results.
+                </p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 } 
