@@ -2,63 +2,96 @@ import { defineSchema, defineTable } from 'convex/server'
 import { type Infer, v } from 'convex/values'
 
 const schema = defineSchema({
-  boards: defineTable({
+  clients: defineTable({
     id: v.string(),
     name: v.string(),
-    color: v.string(),
+    description: v.optional(v.string()),
+    isActive: v.boolean(),
   }).index('id', ['id']),
 
-  columns: defineTable({
+  projects: defineTable({
     id: v.string(),
-    boardId: v.string(),
+    clientId: v.string(),
     name: v.string(),
-    order: v.number(),
+    description: v.optional(v.string()),
+    isActive: v.boolean(),
   })
     .index('id', ['id'])
-    .index('board', ['boardId']),
+    .index('client', ['clientId']),
 
-  items: defineTable({
+  timeEntries: defineTable({
     id: v.string(),
-    title: v.string(),
-    content: v.optional(v.string()),
-    order: v.number(),
-    columnId: v.string(),
-    boardId: v.string(),
+    clientId: v.string(),
+    projectId: v.string(),
+    startTime: v.number(), // timestamp in milliseconds
+    endTime: v.optional(v.number()), // timestamp in milliseconds, null if currently running
+    duration: v.optional(v.number()), // duration in milliseconds, calculated when stopped
+    description: v.optional(v.string()),
+    date: v.string(), // YYYY-MM-DD format for easy querying by date
   })
     .index('id', ['id'])
-    .index('column', ['columnId'])
-    .index('board', ['boardId']),
+    .index('client', ['clientId'])
+    .index('project', ['projectId'])
+    .index('date', ['date'])
+    .index('running', ['endTime']) // to easily find running entries (where endTime is null)
+    .index('clientDate', ['clientId', 'date'])
+    .index('projectDate', ['projectId', 'date']),
 })
+
 export default schema
 
-const board = schema.tables.boards.validator
-const column = schema.tables.columns.validator
-const item = schema.tables.items.validator
+const client = schema.tables.clients.validator
+const project = schema.tables.projects.validator
+const timeEntry = schema.tables.timeEntries.validator
 
-export const updateBoardSchema = v.object({
-  id: board.fields.id,
-  name: v.optional(board.fields.name),
-  color: v.optional(v.string()),
+export const createClientSchema = v.object({
+  name: client.fields.name,
+  description: v.optional(client.fields.description),
 })
 
-export const updateColumnSchema = v.object({
-  id: column.fields.id,
-  boardId: column.fields.boardId,
-  name: v.optional(column.fields.name),
-  order: v.optional(column.fields.order),
+export const updateClientSchema = v.object({
+  id: client.fields.id,
+  name: v.optional(client.fields.name),
+  description: v.optional(client.fields.description),
+  isActive: v.optional(client.fields.isActive),
 })
 
-export const deleteItemSchema = v.object({
-  id: item.fields.id,
-  boardId: item.fields.boardId,
-})
-const { order, id, ...rest } = column.fields
-export const newColumnsSchema = v.object(rest)
-export const deleteColumnSchema = v.object({
-  boardId: column.fields.boardId,
-  id: column.fields.id,
+export const createProjectSchema = v.object({
+  clientId: project.fields.clientId,
+  name: project.fields.name,
+  description: v.optional(project.fields.description),
 })
 
-export type Board = Infer<typeof board>
-export type Column = Infer<typeof column>
-export type Item = Infer<typeof item>
+export const updateProjectSchema = v.object({
+  id: project.fields.id,
+  clientId: project.fields.clientId,
+  name: v.optional(project.fields.name),
+  description: v.optional(project.fields.description),
+  isActive: v.optional(project.fields.isActive),
+})
+
+export const startTimeEntrySchema = v.object({
+  clientId: timeEntry.fields.clientId,
+  projectId: timeEntry.fields.projectId,
+  description: v.optional(timeEntry.fields.description),
+})
+
+export const stopTimeEntrySchema = v.object({
+  id: timeEntry.fields.id,
+})
+
+export const updateTimeEntrySchema = v.object({
+  id: timeEntry.fields.id,
+  description: v.optional(timeEntry.fields.description),
+})
+
+export const getTimeReportSchema = v.object({
+  startDate: v.string(), // YYYY-MM-DD
+  endDate: v.string(), // YYYY-MM-DD
+  clientId: v.optional(v.string()),
+  projectId: v.optional(v.string()),
+})
+
+export type Client = Infer<typeof client>
+export type Project = Infer<typeof project>
+export type TimeEntry = Infer<typeof timeEntry>

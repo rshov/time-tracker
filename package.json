@@ -1,12 +1,12 @@
 {
-  "name": "tanstack-start-example-convex-trellaux",
+  "name": "tanstack-start-time-tracker",
   "private": true,
   "sideEffects": false,
   "type": "module",
   "scripts": {
     "dev": "npx convex dev --once && concurrently -r npm:dev:web npm:dev:db",
     "dev:web": "vinxi dev",
-    "dev:db": "convex dev --run board:seed",
+    "dev:db": "convex dev",
     "build": "vinxi build",
     "start": "vinxi start"
   },
