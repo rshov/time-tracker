@@ -134,6 +134,7 @@ export function TimeTracker() {
                   setSelectedClientId(value)
                   setSelectedProjectId('')
                 }}
+                disabled={!!runningEntry}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a client" />
@@ -153,7 +154,7 @@ export function TimeTracker() {
               <Select
                 value={selectedProjectId}
                 onValueChange={setSelectedProjectId}
-                disabled={!selectedClientId}
+                disabled={!selectedClientId || !!runningEntry}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select a project" />
