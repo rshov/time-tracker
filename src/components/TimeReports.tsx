@@ -26,8 +26,8 @@ export function TimeReports() {
     return formatDate(date)
   })
   const [endDate, setEndDate] = useState(formatDate(new Date()))
-  const [selectedClientId, setSelectedClientId] = useState<string>('')
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('')
+  const [selectedClientId, setSelectedClientId] = useState<string>('all')
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all')
 
   // Queries
   const { data: clients } = useSuspenseQuery(convexQuery(api.timeTracking.getClients, {}))
@@ -35,8 +35,8 @@ export function TimeReports() {
   const { data: report } = useSuspenseQuery(convexQuery(api.timeTracking.getCustomTimeReport, {
     startDate,
     endDate,
-    clientId: selectedClientId || undefined,
-    projectId: selectedProjectId || undefined,
+    clientId: selectedClientId === 'all' ? undefined : selectedClientId,
+    projectId: selectedProjectId === 'all' ? undefined : selectedProjectId,
   }))
 
   const setQuickDateRange = (days: number) => {
@@ -49,7 +49,7 @@ export function TimeReports() {
 
   const activeClients = clients.filter(client => client.isActive)
   const availableProjects = projects.filter(
-    project => project.isActive && (!selectedClientId || project.clientId === selectedClientId)
+    project => project.isActive && (selectedClientId === 'all' || project.clientId === selectedClientId)
   )
 
   return (
@@ -117,13 +117,13 @@ export function TimeReports() {
                 value={selectedClientId}
                 onValueChange={(value) => {
                   setSelectedClientId(value)
-                  if (value) {
+                  if (value !== 'all') {
                     // Clear project filter if it doesn't belong to the selected client
                     const projectBelongsToClient = projects.find(
                       p => p.id === selectedProjectId && p.clientId === value
                     )
                     if (!projectBelongsToClient) {
-                      setSelectedProjectId('')
+                      setSelectedProjectId('all')
                     }
                   }
                 }}
@@ -132,7 +132,7 @@ export function TimeReports() {
                   <SelectValue placeholder="All clients" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All clients</SelectItem>
+                  <SelectItem value="all">All clients</SelectItem>
                   {activeClients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
@@ -152,7 +152,7 @@ export function TimeReports() {
                   <SelectValue placeholder="All projects" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All projects</SelectItem>
+                  <SelectItem value="all">All projects</SelectItem>
                   {availableProjects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
